@@ -1,0 +1,33 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+INTRO
+
+Importamos las librerías a utilizar
+
+```{r}
+rm(list=ls())
+require(dplyr)
+require(ggplot2)
+```
+
+
+Importamos los datasets con los que se va a trabajar:
+
+```{r}
+df_abc <- read.csv("./datasets/202208_PAX15min-ABC.csv", sep=";")
+df_deh <- read.csv("./datasets/202208_PAX15min-DEH.csv", sep=";")
+
+df <- bind_rows(df_abc, df_deh)
+rm(df_abc, df_deh)
+```
+
+Agrupamos la información a nivel estación/horario:
+
+```{r}
+df = df %>%
+  group_by(FECHA, DESDE, HASTA, LINEA, ESTACION) %>%
+  summarize(pasajeros = sum(pax_TOTAL))
+```
