@@ -8,11 +8,11 @@ INTRO
 Importamos las librerías a utilizar
 
 ```{r}
-rm(list=ls())
 require(dplyr)
 require(ggplot2)
 require(tsibble)
 require(lubridate)
+library(prophet)
 ```
 
 
@@ -35,5 +35,14 @@ df = df %>%
   mutate(ts = dmy_hms(paste0(FECHA," " ,DESDE))) %>%
   ungroup() %>%
   select(-c(FECHA, DESDE, HASTA))  ## ver si dejar esto o no
+```
+
+
+Agrupamos la información a nivel estación/horario y convertimos a formato fecha/hora:
+
+```{r}
+df %>%
+  filter(ts > "2022-08-15" & ESTACION == "Florida") %>%
+  ggplot(aes(ts, pasajeros)) + geom_line()
 ```
 
