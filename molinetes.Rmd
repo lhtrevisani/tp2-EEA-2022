@@ -11,6 +11,8 @@ Importamos las librerías a utilizar
 rm(list=ls())
 require(dplyr)
 require(ggplot2)
+require(tsibble)
+require(lubridate)
 ```
 
 
@@ -24,10 +26,14 @@ df <- bind_rows(df_abc, df_deh)
 rm(df_abc, df_deh)
 ```
 
-Agrupamos la información a nivel estación/horario:
+Agrupamos la información a nivel estación/horario y convertimos a formato fecha/hora:
 
 ```{r}
 df = df %>%
-  group_by(FECHA, DESDE, HASTA, LINEA, ESTACION) %>%
-  summarize(pasajeros = sum(pax_TOTAL))
+  group_by(FECHA, DESDE, HASTA, LINEA, ESTACION) %>%  # evaluar agrupar a nivel linea y quedarse con una única línea para el análisis
+  summarize(pasajeros = sum(pax_TOTAL)) %>%
+  mutate(ts = dmy_hms(paste0(FECHA," " ,DESDE))) %>%
+  ungroup() %>%
+  select(-c(FECHA, DESDE, HASTA))  ## ver si dejar esto o no
 ```
+
