@@ -12,6 +12,7 @@ rm(list=ls())
 
 require(dplyr)
 require(ggplot2)
+require(ggfortify)
 require(tsibble)
 require(lubridate)
 require(prophet)
@@ -78,7 +79,8 @@ df %>%
 
 
 ```
-prophet
+
+realizo algunas modificaciones para poder trabajar con la serie:
 
 ```{r}
 df_lineaD = df %>%
@@ -87,11 +89,38 @@ df_lineaD = df %>%
   summarise(pasajeros = sum(pasajeros)) %>%
   ungroup() %>%
   select(ts, pasajeros) %>%
-  rename(ds = ts, y = pasajeros)
+  rename(ds = ts, y = pasajeros) %>% as_tsibble(index = ds)
 
 ```
 
 
+se podría sumar algún gráfico en el que se vea la estacionalidad horaria:
+
+```{r}
+
+```
+
+
+
+
+grafico autocorrelacion
+```{r}
+df_lineaD %>%
+  as.ts() %>%
+  Acf() %>%
+  autoplot()
+```
+
+```{r}
+df_lineaD %>%
+  as.ts() %>%
+  gg_tsdisplay(difference(y, 1),
+               plot_type='partial', lag=36)
+```
+
+
+
+prophet
 
 ```{r}
 # Feriados
@@ -117,5 +146,10 @@ prophet_full = fit.prophet(m = prophet_full, df_lineaD)
 
 ```{r}
 prophet_plot_components(prophet_full, fcst=predict(prophet_full, df_lineaD))
+```
+
+
+```{r}
+
 ```
 
