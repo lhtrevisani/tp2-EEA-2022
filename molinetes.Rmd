@@ -78,3 +78,44 @@ df %>%
 
 
 ```
+prophet
+
+```{r}
+df_lineaD = df %>%
+  filter(LINEA == 'LineaD') %>%
+  group_by(LINEA,ts) %>%
+  summarise(pasajeros = sum(pasajeros)) %>%
+  ungroup() %>%
+  select(ts, pasajeros) %>%
+  rename(ds = ts, y = pasajeros)
+
+```
+
+
+
+```{r}
+# Feriados
+feriados = data.frame(
+  holiday= 'feriados',
+  ds= ymd(c('2022-08-15','2022-10-07','2022-10-10')),
+  lower_window= 0,
+  upper_window= 0)
+
+```
+
+
+```{r}
+# Llamamos al modelo con el dataset de eventos
+prophet_full=prophet(changepoint.prior.scale=0.01, holidays = feriados)
+
+# Agregamos la estacionalidad mensual
+#prophet_full=add_seasonality(prophet_full, name='monthly', period=30.5, fourier.order = 4)
+
+# Le pasamos el dataset
+prophet_full = fit.prophet(m = prophet_full, df_lineaD) 
+```
+
+```{r}
+prophet_plot_components(prophet_full, fcst=predict(prophet_full, df_lineaD))
+```
+
