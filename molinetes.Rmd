@@ -8,11 +8,14 @@ INTRO
 Importamos las librerías a utilizar
 
 ```{r}
+rm(list=ls())
+
 require(dplyr)
 require(ggplot2)
 require(tsibble)
 require(lubridate)
-library(prophet)
+require(prophet)
+require(forecast)
 ```
 
 
@@ -38,11 +41,40 @@ df = df %>%
 ```
 
 
-Agrupamos la información a nivel estación/horario y convertimos a formato fecha/hora:
+Agrupamos por linea y observamos la cantidad de pasajeros para cada una de ellas:
 
 ```{r}
 df %>%
-  filter(ts > "2022-08-15" & ESTACION == "Florida") %>%
-  ggplot(aes(ts, pasajeros)) + geom_line()
+  filter(ts >= "2022-08-01 05:15:00" & ts <= "2022-08-07 23:15:00") %>%
+  group_by(LINEA, ts) %>%
+  summarise(pasajeros = sum(pasajeros)) %>%
+  ggplot() +
+  aes(x = ts, y = pasajeros, fill = LINEA, colour = LINEA, group = LINEA) +
+  geom_line(size = 0.5) +
+  scale_fill_manual(values = c(LineaA = "#5CD2FB", LineaB = "#FD2929", LineaC = "#1872D6", LineaD = "#39A029", LineaE = "#583FD2", LineaH = "#FFEC3B")) +
+  scale_color_manual(values = c(LineaA = "#5CD2FB", LineaB = "#FD2929", LineaC = "#1872D6", LineaD = "#39A029", LineaE = "#583FD2", LineaH = "#FFEC3B")) +
+  labs(x = "horario del día", y = "cantidad de pasajeros", title = "cantidad de pasajeros por linea") + 
+  theme_linedraw() +
+  theme(legend.position = "none") +
+  facet_wrap(vars(LINEA)) + 
+  scale_x_datetime(breaks= seq(min(df$ts), max(df$ts), by = "24 hour"), date_labels = "%a %H %M") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 ```
 
+
+Para el análisis, nos  vamos a quedar con la información de la linea X para el período Y:
+```{r}
+df %>%
+  filter(LINEA == 'LineaD') %>%
+  group_by(LINEA,ts) %>%
+  summarise(pasajeros = sum(pasajeros)) %>%
+  ggplot(aes(x = ts, y=pasajeros)) +
+  geom_line(colour = "#39A029") +
+  labs(x = "horario del día", y = "cantidad de pasajeros", title = "cantidad de pasajeros de la linea D") + 
+  theme_linedraw() +
+  theme(legend.position = "none") + 
+  scale_x_datetime(breaks= seq(min(df$ts), max(df$ts), by = "12 hour"), date_labels = "%a %H %M") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 5))
+
+
+```
