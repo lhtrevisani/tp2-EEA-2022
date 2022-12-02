@@ -114,7 +114,10 @@ df_analisis <- df_linea %>%
   mutate(ts = floor_date(ts, unit = 'hour')) %>%
   group_by(ts) %>%
   summarise(y = sum(pasajeros)) %>%
-  rename(ds = ts)
+  rename(ds = ts) %>%
+  mutate(dia_semana = as.character(wday(ds, label=TRUE)),
+         hora = as.character(hour(ds)),
+         time_index = row_number())
 
 df_train <- df_analisis %>% 
   filter(ds < "2022-08-22")
@@ -144,16 +147,33 @@ df_analisis %>%
 
 ### ARIMA
 
-realizo algunas modificaciones para poder trabajar con la serie:
+En primer lugar, se va a armar una regresión lineal con la tendencia y las variables estacionales. Luego, utilizará ARIMA para intentar captar cierto componente autoregresivo en la serie.
 
 ```{r}
-df_lineaD = df %>%
-  filter(LINEA == 'LineaD') %>%
-  group_by(LINEA,ts) %>%
-  summarise(pasajeros = sum(pasajeros)) %>%
-  ungroup() %>%
-  select(ts, pasajeros) %>%
-  rename(ds = ts, y = pasajeros) %>% as_tsibble(index = ds)
+df_train %>%
+  select(ds, y) %>% as_tsibble(index = ds) %>% as.ts() %>% mstl(s.window = c(7,  7*24)) %>%
+  autoplot() (s.window='periodic') %>% seasadj() -> eeadj
+
+
+```
+
+OTRO ENFOQUE:
+
+```{r}
+reg = lm(log(y) ~ dia_semana + hora + time_index, data = df_train)
+summary(reg)
+```
+
+```{r}
+plot(reg)
+```
+
+
+
+realizo algunas modificaciones para poder trabajar con la serie:
+
+
+```{r}
 
 ```
 
@@ -208,7 +228,7 @@ prophet_plot_components(prophet_full, fcst=predict(prophet_full, df_train))
 
 ```{r}
 #future <- make_future_dataframe(m, periods = 365)
-forecast <- predict(prophet_full, df_test)
+forecast <- predict(prophet_full, df_test)   ## chequear si esto está ok.
 
 resultado = cbind(df_test, forecast$yhat)
 colnames(resultado) <- c("dia", "pasajeros", "prediccion")
@@ -230,3 +250,6 @@ lines(resultado$dia,                             # Draw second time series
       type = "l",
       col = 3)
 ```
+
+### Bibliografía
+
