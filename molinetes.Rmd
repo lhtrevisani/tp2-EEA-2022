@@ -3,11 +3,14 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-INTRO
+# Series de tiempo: comparativa entre un modelo ARIMA y prophet
+
+### Introducción
 
 Importamos las librerías a utilizar
 
-```{r}
+```{r, echo = TRUE, message=FALSE}
+
 rm(list=ls())
 
 require(dplyr)
@@ -19,11 +22,7 @@ require(prophet)
 require(forecast)
 ```
 
-EDA
-
-
-
-
+### Análisis exploratorio
 
 Importamos los datasets con los que se va a trabajar:
 
@@ -36,7 +35,8 @@ rm(df_abc, df_deh)
 print(colnames(df))
 
 ```
-Grafico por línea y separo por estacion
+
+Agrupamos la información a nivel estación/horario y convertimos a formato fecha/hora:
 
 ```{r}
 df_linea <- df %>% 
@@ -46,32 +46,11 @@ df_linea <- df %>%
   ungroup() %>% 
   select(-c(FECHA, DESDE, HASTA))
 ```
-```{r}
-dia <- "2022-08-10"
-dia1 <- "2022-08-11"
-
-df_linea %>%
-  filter(ts > dia,ts<dia1,LINEA == 'LineaC') %>%
-  ggplot() + geom_line(aes(ts, pasajeros,color=ESTACION))
-```
-
-
-Agrupamos la información a nivel estación/horario y convertimos a formato fecha/hora:
-
-```{r}
-df = df %>%
-  group_by(FECHA, DESDE, HASTA, LINEA, ESTACION) %>%  # evaluar agrupar a nivel linea y quedarse con una única línea para el análisis
-  summarize(pasajeros = sum(pax_TOTAL)) %>%
-  mutate(ts = dmy_hms(paste0(FECHA," " ,DESDE))) %>%
-  ungroup() %>%
-  select(-c(FECHA, DESDE, HASTA))  ## ver si dejar esto o no
-```
-
 
 Agrupamos por linea y observamos la cantidad de pasajeros para cada una de ellas:
 
 ```{r}
-df %>%
+df_linea %>%
   filter(ts >= "2022-08-01 05:15:00" & ts <= "2022-08-07 23:15:00") %>%
   group_by(LINEA, ts) %>%
   summarise(pasajeros = sum(pasajeros)) %>%
@@ -84,27 +63,85 @@ df %>%
   theme_linedraw() +
   theme(legend.position = "none") +
   facet_wrap(vars(LINEA)) + 
-  scale_x_datetime(breaks= seq(min(df$ts), max(df$ts), by = "24 hour"), date_labels = "%a %H %M") + 
+  scale_x_datetime(breaks= seq(min(df_linea$ts), max(df_linea$ts), by = "24 hour"), date_labels = "%a %H %M") + 
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 ```
 
+```{r, include = FALSE, warning=FALSE, message=FALSE}
+library(plotly)
+library(htmlwidgets)
 
-Para el análisis, nos  vamos a quedar con la información de la linea X para el período Y:
-```{r}
-df %>%
-  filter(LINEA == 'LineaD') %>%
-  group_by(LINEA,ts) %>%
-  summarise(pasajeros = sum(pasajeros)) %>%
-  ggplot(aes(x = ts, y=pasajeros)) +
-  geom_line(colour = "#39A029") +
-  labs(x = "horario del día", y = "cantidad de pasajeros", title = "cantidad de pasajeros de la linea D") + 
-  theme_linedraw() +
-  theme(legend.position = "none") + 
-  scale_x_datetime(breaks= seq(min(df$ts), max(df$ts), by = "12 hour"), date_labels = "%a %H %M") + 
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 5))
+#setwd("D:\\OneDrive\\Personal\\Maestria Data Mining\\Cuatrimestre_2\\Enfoque Estadístico del Aprendizaje\\TP\\EEA-TPs\\TP2\\tp2-EEA-2022\\output")
+setwd("~/Documents/GitHub/tp2-EEA-2022/output")
+
+dia <- c("2022-08-08","2022-08-09","2022-08-10","2022-08-11","2022-08-12","2022-08-13","2022-08-14")
+dia_final <- c("2022-08-09","2022-08-10","2022-08-11","2022-08-12","2022-08-13","2022-08-14","2022-08-15")
+nombre_dia <- c('Lunes','Martes','Miercoles','Jueves','Viernes','Sabado','Domingo')
+i<- 1
+
+lista_lineas <- c('LineaA','LineaB','LineaC','LineaD','LineaE','LineaH')
+for (dia_inicial in dia){
+  print(i)
+  dia <- dia_inicial
+  dia1 <- dia_final[i]
+  nombre <- nombre_dia[i]
+  print(dia)
+  print(dia1)
+  print(nombre)
+    for (linea in lista_lineas){
+    p <- df_linea %>%
+    filter(ts > dia,ts<dia1,LINEA == linea) %>%
+    ggplot() + geom_line(aes(ts, pasajeros,color=ESTACION)) + ggtitle(paste('Pasajeros para el dia',nombre,'en',linea,sep=" ")+
+                                                                        scale_x_date(date_breaks = "1 hour", date_labels = "%H:%M") +
+                                                                        scale_x_date(date_minor_breaks = "15 minutes"))
+    #print(ggplotly(p))
+    
+    saveWidget(ggplotly(p), file = paste('Pasajeros para el dia',nombre,'en',linea,'.html',sep=" "));
+    }
+  i <- i+1
+}
 
 
 ```
+
+Para el análisis, nos vamos a quedar con la información de la estación palermo de la linea D y vamos a trabajar con los siguientes períodos:
+
+Train: 1/08/2022 al 21/08/2022 Test: 22/08/2022 al 28/08/2022
+
+```{r}
+df_analisis <- df_linea %>%
+  filter(ts > "2022-08-01" & ts < "2022-08-29" & ESTACION == "Palermo") %>%
+  mutate(ts = floor_date(ts, unit = 'hour')) %>%
+  group_by(ts) %>%
+  summarise(y = sum(pasajeros))
+
+df_train <- df_analisis %>% 
+  filter(ts < "2022-08-22")
+
+df_test <- df_analisis %>% 
+  filter(ts > "2022-08-22")
+
+```
+
+Observo la serie:
+
+```{r}
+df_analisis %>%
+  ggplot(aes(x = ts, y=y)) +
+  geom_line(colour = "#39A029") +
+  labs(x = "horario del día", y = "cantidad de pasajeros", title = "cantidad de pasajeros de la estación Palermo") + 
+  theme_linedraw() +
+  theme(legend.position = "none") + 
+  scale_x_datetime(breaks= seq(min(df_linea$ts), max(df_linea$ts), by = "12 hour"), date_labels = "%a %H %M") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 5)) + 
+  geom_vline(aes(xintercept=min(df_test$ts), color='red')) +
+  geom_text(aes(x=min(df_test$ts) , label="TRAIN       TEST", y=1600), colour="red", angle=0)
+
+
+
+```
+
+### ARIMA
 
 realizo algunas modificaciones para poder trabajar con la serie:
 
@@ -119,17 +156,14 @@ df_lineaD = df %>%
 
 ```
 
-
 se podría sumar algún gráfico en el que se vea la estacionalidad horaria:
 
 ```{r}
 
 ```
 
-
-
-
 grafico autocorrelacion
+
 ```{r}
 df_lineaD %>%
   as.ts() %>%
@@ -144,9 +178,7 @@ df_lineaD %>%
                plot_type='partial', lag=36)
 ```
 
-
-
-prophet
+### Prophet
 
 ```{r}
 # Feriados
@@ -157,7 +189,6 @@ feriados = data.frame(
   upper_window= 0)
 
 ```
-
 
 ```{r}
 # Llamamos al modelo con el dataset de eventos
@@ -174,8 +205,6 @@ prophet_full = fit.prophet(m = prophet_full, df_lineaD)
 prophet_plot_components(prophet_full, fcst=predict(prophet_full, df_lineaD))
 ```
 
-
 ```{r}
 
 ```
-
