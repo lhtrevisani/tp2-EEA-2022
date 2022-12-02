@@ -18,6 +18,11 @@ require(prophet)
 require(forecast)
 ```
 
+EDA
+
+
+
+
 
 Importamos los datasets con los que se va a trabajar:
 
@@ -27,7 +32,28 @@ df_deh <- read.csv("./datasets/202208_PAX15min-DEH.csv", sep=";")
 
 df <- bind_rows(df_abc, df_deh)
 rm(df_abc, df_deh)
+print(colnames(df))
+
 ```
+Grafico por línea y separo por estacion
+
+```{r}
+df_linea <- df %>% 
+  group_by(FECHA,DESDE,HASTA,LINEA,ESTACION) %>% 
+  summarize(pasajeros = sum(pax_TOTAL)) %>% 
+  mutate(ts = dmy_hms(paste0(FECHA," " ,DESDE)))%>%
+  ungroup() %>% 
+  select(-c(FECHA, DESDE, HASTA))
+```
+```{r}
+dia <- "2022-08-10"
+dia1 <- "2022-08-11"
+
+df_linea %>%
+  filter(ts > dia,ts<dia1,LINEA == 'LineaC') %>%
+  ggplot() + geom_line(aes(ts, pasajeros,color=ESTACION))
+```
+
 
 Agrupamos la información a nivel estación/horario y convertimos a formato fecha/hora:
 
