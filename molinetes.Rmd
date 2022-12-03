@@ -20,6 +20,9 @@ require(tsibble)
 require(lubridate)
 require(prophet)
 require(forecast)
+require(broom)
+require(tseries)
+require(fable)
 ```
 
 ### Análisis exploratorio
@@ -109,6 +112,9 @@ Para el análisis, nos vamos a quedar con la información de la estación palerm
 Train: 1/08/2022 al 21/08/2022 Test: 22/08/2022 al 28/08/2022
 
 ```{r}
+
+feriados = as.Date(c("2022-08-15"))
+
 df_analisis <- df_linea %>%
   filter(ts > "2022-08-01" & ts < "2022-08-29" & ESTACION == "Palermo") %>%
   mutate(ts = floor_date(ts, unit = 'hour')) %>%
@@ -117,7 +123,9 @@ df_analisis <- df_linea %>%
   rename(ds = ts) %>%
   mutate(dia_semana = as.character(wday(ds, label=TRUE)),
          hora = as.character(hour(ds)),
-         time_index = row_number())
+         time_index = row_number(),
+         log_y = log(y),
+         feriado = if_else(as.Date(floor_date(ds, unit = 'day')) %in% feriados, TRUE, FALSE))
 
 df_train <- df_analisis %>% 
   filter(ds < "2022-08-22")
@@ -141,8 +149,6 @@ df_analisis %>%
   geom_vline(aes(xintercept=min(df_test$ds), color='red')) +
   geom_text(aes(x=min(df_test$ds) , label="TRAIN     TEST", y=1600), colour="red", angle=0)
 
-
-
 ```
 
 ### ARIMA
@@ -160,28 +166,148 @@ df_train %>%
 OTRO ENFOQUE:
 
 ```{r}
-reg = lm(log(y) ~ dia_semana + hora + time_index, data = df_train)
+reg = lm(log_y ~ dia_semana + hora + feriado + time_index, data = df_train)
 summary(reg)
 ```
 
 ```{r}
 plot(reg)
 ```
+predict en train y predict en test:
+
+```{r}
+df_train$y_hat_log = predict(reg)
+df_test$y_hat_log = predict(reg, newdata = df_test)
+
+augment(reg)
+```
+
+Calculo la exponencial de las predicciones:
+
+```{r}
+
+df_train$y_hat = exp(df_train$y_hat_log)
+df_test$y_hat = exp(df_test$y_hat_log)
+
+```
+
+Ploteo test y predicciones:
+
+```{r}
+
+plot(df_test$ds,                              # Draw first time series
+     df_test$y,
+     type = "l",
+     col = 2,
+     #ylim = c(- 15, 40),
+     xlab = "Year",
+     ylab = "Values")
+lines(df_test$ds,                             # Draw second time series
+      df_test$y_hat,
+      type = "l",
+      col = 3)
+```
+
+Calculo los residuos:
+
+```{r}
+df_train$residuos = reg$residuals
+plot(df_train$residuos)
+```
+
+Hago el test de dickey-fuller
+
+
+```{r}
+adf.test(df_train$residuos)
+```
+
+Es necesario diferenciar?
+
+```{r}
+modelo = auto.arima(df_train %>% as_tsibble(index = ds) %>% fill_gaps() %>% select(residuos))
+
+summary(modelo)
+```
 
 
 
-realizo algunas modificaciones para poder trabajar con la serie:
+```{r}
+library(feasts)
 
+gg_tsdisplay(df_train %>% as_tsibble(index = ds) %>% fill_gaps() %>% select(residuos), plot_type='partial')
+
+```
+
+Ajusto el ARIMA:
+
+```{r}
+require(fable)
+
+modelos = df_train %>% as_tsibble(index = ds) %>% fill_gaps() %>%
+  model(arima200 = ARIMA(residuos ~ pdq(2,0,0)),
+        arima001 = ARIMA(residuos ~ pdq(0,0,1)),
+        arima201 = ARIMA(residuos ~ pdq(2,0,1)),
+        stepwise = ARIMA(residuos),
+        search = ARIMA(residuos, stepwise=FALSE))
+
+glance(modelos) %>% arrange(AICc) %>% select(.model:BIC)
+
+```
+
+Analizo los residuos del arima (ploteo + histograma?):
+
+```{r}
+
+modelos %>%
+  select(arima200) %>% 
+  gg_tsresiduals()
+
+adf.test(modelos %>% 
+  select(arima200) %>%
+  residuals())
+```
+
+
+Realizo las predicciones sobre test:
+
+```{r}
+
+modelos %>%
+  select(search) %>% fitted()
+
+modelos %>%
+  select(search) %>% forecast(h = "1 week")
+```
+
+sumo predicción del modelo anterior + arima tanto para train como para test.
+
+```{r}
+
+df_train$arima_pred = modelos %>% select(search) %>% fitted()
+df_test$arima_pred
+
+```
+
+Transformo aplicando la exponencial:
 
 ```{r}
 
 ```
 
-se podría sumar algún gráfico en el que se vea la estacionalidad horaria:
+Ploteo predicción vs valores reales:
 
 ```{r}
 
 ```
+
+Calculo RMSE:
+
+```{r}
+
+```
+
+
 
 grafico autocorrelacion
 
