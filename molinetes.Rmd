@@ -5,7 +5,7 @@ output: html_notebook
 
 # Series de tiempo: comparativa entre un modelo ARIMA y prophet
 
-En el siguiente trabajo se abordará la modelización y la predicción de la serie temporal de pasajeros del subte de Buenos Aires utilizando ARIMA y prophet. 
+En el siguiente trabajo se abordará la modelización y la predicción de la serie temporal de pasajeros del subte de Buenos Aires utilizando ARIMA y prophet.
 
 ### Introducción
 
@@ -157,8 +157,6 @@ df_analisis %>%
 
 ### ARIMA
 
-
-
 ```{r}
 df_train %>%
   select(ds, y) %>% as_tsibble(index = ds) %>% as.ts() %>% mstl(s.window = c(7,  7*24)) %>%
@@ -250,54 +248,98 @@ glance(modelos) %>% arrange(AICc) %>% select(.model:BIC)
 Analizo los residuos del arima:
 
 ```{r}
-
 modelos %>%
   select(arima200) %>% 
   gg_tsresiduals()
 ```
 
-
 Realizo las predicciones sobre test:
 
 ```{r}
+pred_train = modelos %>%
+  select(arima200) %>% fitted()
 
 pred_test = modelos %>%
-  select(search) %>% fitted()
-
-modelos %>%
-  select(search) %>% forecast(h = "1 week")
+  select(arima200) %>% forecast(h = "1 week")
 ```
 
 sumo predicción del modelo anterior + arima tanto para train como para test.
 
 ```{r}
 
-df_train$arima_pred = modelos %>% select(search) %>% fitted()
-df_test$arima_pred
+df_train = left_join(df_train, pred_train[c('ds', '.fitted')], 
+              by = 'ds')
+
+df_test = left_join(df_test, pred_test[c('ds', '.mean')], 
+              by = 'ds')
 
 ```
 
-Transformo aplicando la exponencial:
+Observamos la modelización del arima:
 
 ```{r}
+plot(df_train$ds,                              # Draw first time series
+     df_train$residuos,
+     type = "l",
+     col = 2,
+     #ylim = c(- 15, 40),
+     xlab = "Year",
+     ylab = "Values")
+lines(df_train$ds,                             # Draw second time series
+      df_train$.fitted,
+      type = "l",
+      col = 3)
+
+```
+
+Sumamos los resultados del ARIMA a los del primer modelo y calculo la exponencial para llevarlo a la escala original de la serie:
+
+```{r}
+
+df_train = df_train %>%
+  mutate(y_final_log = y_hat_log + .fitted,
+         y_final = exp(y_final_log))
+
+df_test = df_test %>%
+  mutate(y_final_log = y_hat_log + .mean,
+         y_final = exp(y_final_log))
 
 ```
 
 Ploteo predicción vs valores reales:
 
 ```{r}
-
+plot(df_test$ds,                              # Draw first time series
+     df_test$y,
+     type = "l",
+     col = 2,
+     #ylim = c(- 15, 40),
+     xlab = "Year",
+     ylab = "Values")
+lines(df_test$ds,                             # Draw second time series
+      df_test$y_final,
+      type = "l",
+      col = 3)
 ```
 
 Calculo RMSE:
 
 ```{r}
-
+require(Metrics)
+rmse(df_test$y, df_test$y_final)
 ```
 
+Considerando el error del modelo, se podría incluir alguna interacción entre el horario y el día (o si es fin de semana o no como regresora del modelo) lo que también podría ayduarnos a explicar la estructura que se observa en los residuos del arima.
 
+A priori, no sería la mejor opción para modelar este tipo de problemas con estacionaldiad diaria y horaria.
 
 ### Prophet
+
+A continuación, vamos a modelar el mismo problema utilizando prophet de la misma forma que fue abordado en la clase de la materia:
+
+<https://github.com/lhtrevisani/EEA-2022/tree/main/clase%2011>
+
+En primer lugar, agregamos los feriados:
 
 ```{r}
 # Feriados
@@ -309,6 +351,8 @@ feriados = data.frame(
 
 ```
 
+Luego, instanciamos el modelo y le pasamos el dataset de entrenamiento.
+
 ```{r}
 # Llamamos al modelo con el dataset de eventos
 prophet_full=prophet(changepoint.prior.scale=0.01, holidays = feriados)
@@ -317,19 +361,24 @@ prophet_full=prophet(changepoint.prior.scale=0.01, holidays = feriados)
 #prophet_full=add_seasonality(prophet_full, name='monthly', period=30.5, fourier.order = 4)
 
 # Le pasamos el dataset
-prophet_full = fit.prophet(m = prophet_full, df_train) 
+prophet_full = fit.prophet(m = prophet_full, df_train %>% select(ds, log_y) %>% rename(y = log_y)) 
 ```
 
+Observamos la descomposición de los distintos componentes de la serie:
+
 ```{r}
-prophet_plot_components(prophet_full, fcst=predict(prophet_full, df_train))
+prophet_plot_components(prophet_full, fcst=predict(prophet_full, df_train %>% select(ds, log_y) %>% rename(y = log_y)))
 ```
+
+Realizamos la predicción sobre la última semana del mes de agosto:
 
 ```{r}
 #future <- make_future_dataframe(m, periods = 365)
-forecast <- predict(prophet_full, df_test)   ## chequear si esto está ok.
+forecast <- predict(prophet_full, df_test %>% select(ds, log_y) %>% rename(y = log_y))   ## chequear si esto está ok.
 
-resultado = cbind(df_test, forecast$yhat)
-colnames(resultado) <- c("dia", "pasajeros", "prediccion")
+resultado = cbind(df_test[c('ds', 'y')], forecast$yhat)
+colnames(resultado) <- c("dia", "pasajeros", "log_prediccion")
+resultado$prediccion = exp(resultado$log_prediccion)
 
 require(Metrics)
 rmse(resultado$pasajeros, resultado$prediccion)
@@ -351,3 +400,8 @@ lines(resultado$dia,                             # Draw second time series
 
 ### Bibliografía
 
+-   Hyndman, R.J., & Athanasopoulos, G. (2021) Forecasting: principles and practice, 3rd edition, OTexts: Melbourne, Australia. OTexts.com/fpp3. 
+
+-   Shumway, R.H. and Stoffer, D.S. (2011) Time Series Analysis and Its Applications (With R examples), 3rd edition, Springer: New York, USA
+
+-   Diebold, F.X. (2008) Elements of forecasting, 4th edition. Mason, Ohio: South-Western/Cengage Learning.
