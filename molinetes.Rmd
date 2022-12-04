@@ -331,8 +331,6 @@ rmse(df_test$y, df_test$y_final)
 
 Considerando el error del modelo, se podría incluir alguna interacción entre el horario y el día (o si es fin de semana o no como regresora del modelo) lo que también podría ayduarnos a explicar la estructura que se observa en los residuos del arima.
 
-A priori, no sería la mejor opción para modelar este tipo de problemas con estacionaldiad diaria y horaria.
-
 ### Prophet
 
 A continuación, vamos a modelar el mismo problema utilizando prophet de la misma forma que fue abordado en la clase de la materia:
@@ -356,9 +354,6 @@ Luego, instanciamos el modelo y le pasamos el dataset de entrenamiento.
 ```{r}
 # Llamamos al modelo con el dataset de eventos
 prophet_full=prophet(changepoint.prior.scale=0.01, holidays = feriados)
-
-# Agregamos la estacionalidad mensual
-#prophet_full=add_seasonality(prophet_full, name='monthly', period=30.5, fourier.order = 4)
 
 # Le pasamos el dataset
 prophet_full = fit.prophet(m = prophet_full, df_train %>% select(ds, log_y) %>% rename(y = log_y)) 
