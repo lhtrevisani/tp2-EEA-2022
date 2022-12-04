@@ -1,0 +1,317 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Series de tiempo: comparativa entre un modelo ARIMA y prophet
+
+### Introducción
+
+Importamos las librerías a utilizar
+
+```{r, echo = TRUE, message=FALSE}
+
+rm(list=ls())
+
+require(dplyr)
+require(ggplot2)
+require(ggfortify)
+require(tsibble)
+require(lubridate)
+require(prophet)
+require(forecast)
+library(Metrics)
+```
+
+### Análisis exploratorio
+
+Importamos los datasets con los que se va a trabajar:
+
+```{r}
+df_abc <- read.csv("./datasets/202208_PAX15min-ABC.csv", sep=";")
+df_deh <- read.csv("./datasets/202208_PAX15min-DEH.csv", sep=";")
+
+df <- bind_rows(df_abc, df_deh)
+rm(df_abc, df_deh)
+print(colnames(df))
+
+```
+
+Agrupamos la información a nivel estación/horario y convertimos a formato fecha/hora:
+
+```{r}
+df_linea <- df %>% 
+  group_by(FECHA,DESDE,HASTA,LINEA,ESTACION) %>% 
+  summarize(pasajeros = sum(pax_TOTAL)) %>% 
+  mutate(ts = dmy_hms(paste0(FECHA," " ,DESDE)))%>%
+  ungroup() %>% 
+  select(-c(FECHA, DESDE, HASTA))
+```
+
+Agrupamos por linea y observamos la cantidad de pasajeros para cada una de ellas:
+
+```{r}
+df_linea %>%
+  filter(ts >= "2022-08-01 05:15:00" & ts <= "2022-08-07 23:15:00") %>%
+  group_by(LINEA, ts) %>%
+  summarise(pasajeros = sum(pasajeros)) %>%
+  ggplot() +
+  aes(x = ts, y = pasajeros, fill = LINEA, colour = LINEA, group = LINEA) +
+  geom_line(size = 0.5) +
+  scale_fill_manual(values = c(LineaA = "#5CD2FB", LineaB = "#FD2929", LineaC = "#1872D6", LineaD = "#39A029", LineaE = "#583FD2", LineaH = "#FFEC3B")) +
+  scale_color_manual(values = c(LineaA = "#5CD2FB", LineaB = "#FD2929", LineaC = "#1872D6", LineaD = "#39A029", LineaE = "#583FD2", LineaH = "#FFEC3B")) +
+  labs(x = "horario del día", y = "cantidad de pasajeros", title = "cantidad de pasajeros por linea") + 
+  theme_linedraw() +
+  theme(legend.position = "none") +
+  facet_wrap(vars(LINEA)) + 
+  scale_x_datetime(breaks= seq(min(df_linea$ts), max(df_linea$ts), by = "24 hour"), date_labels = "%a %H %M") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+```{r, include = FALSE, warning=FALSE, message=FALSE}
+library(plotly)
+library(htmlwidgets)
+
+
+setwd("D:\\OneDrive\\Personal\\Maestria Data Mining\\Cuatrimestre_2\\Enfoque Estadístico del Aprendizaje\\TP\\EEA-TPs\\TP2\\tp2-EEA-2022\\output")
+#setwd("~/Documents/GitHub/tp2-EEA-2022/output")
+
+
+
+
+dia <- c("2022-08-08","2022-08-09","2022-08-10","2022-08-11","2022-08-12","2022-08-13","2022-08-14")
+dia_final <- c("2022-08-09","2022-08-10","2022-08-11","2022-08-12","2022-08-13","2022-08-14","2022-08-15")
+nombre_dia <- c('Lunes','Martes','Miercoles','Jueves','Viernes','Sabado','Domingo')
+i<- 1
+
+lista_lineas <- c('LineaA','LineaB','LineaC','LineaD','LineaE','LineaH')
+for (dia_inicial in dia){
+  print(i)
+  dia <- dia_inicial
+  dia1 <- dia_final[i]
+  nombre <- nombre_dia[i]
+  print(dia)
+  print(dia1)
+  print(nombre)
+    for (linea in lista_lineas){
+    p <- df_linea %>%
+    filter(ts > dia,ts<dia1,LINEA == linea) %>%
+    ggplot() + geom_line(aes(ts, pasajeros,color=ESTACION)) + ggtitle(paste('Pasajeros para el dia',nombre,'en',linea,sep=" ")+
+                                                                        scale_x_date(date_breaks = "1 hour", date_labels = "%H:%M") +
+                                                                        scale_x_date(date_minor_breaks = "15 minutes"))
+    #print(ggplotly(p))
+    
+    saveWidget(ggplotly(p), file = paste('Pasajeros para el dia',nombre,'en',linea,'.html',sep=" "));
+    }
+  i <- i+1
+}
+
+
+```
+
+Para el análisis, nos vamos a quedar con la información de la estación palermo de la linea D y vamos a trabajar con los siguientes períodos:
+
+Train: 1/08/2022 al 21/08/2022 Test: 22/08/2022 al 28/08/2022
+
+```{r}
+df_analisis <- df_linea %>%
+  filter(ts > "2022-08-01" & ts < "2022-08-29" & ESTACION == "Palermo") %>%
+  mutate(ts = floor_date(ts, unit = 'hour')) %>%
+  group_by(ts) %>%
+  summarise(y = sum(pasajeros)) %>%
+  rename(ds = ts) %>%
+  mutate(dia_semana = as.character(wday(ds, label=TRUE)),
+
+         dia_numero = wday(ds),
+         hora = as.character(hour(ds)),
+         ndays = as.numeric(difftime(as.Date(ds),as.Date(ds)[1],units="days")),
+         time_index = row_number()) 
+  # as_tsibble(index = ds),
+  #        hora = as.character(hour(ds)),
+  #        time_index = row_number()
+
+
+df_train <- df_analisis %>% 
+  filter(ds < "2022-08-22")
+
+df_test <- df_analisis %>% 
+  filter(ds > "2022-08-22")
+
+```
+
+Observo la serie:
+
+```{r}
+df_analisis %>%
+  ggplot(aes(x = ds, y=y)) +
+  geom_line(colour = "#39A029") +
+  labs(x = "horario del día", y = "cantidad de pasajeros", title = "cantidad de pasajeros de la estación Palermo") + 
+  theme_linedraw() +
+  theme(legend.position = "none") + 
+  scale_x_datetime(breaks= seq(min(df_analisis$ds), max(df_analisis$ds), by = "12 hour"), date_labels = "%a %H %M") + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size = 5)) + 
+  geom_vline(aes(xintercept=min(df_test$ds), color='red')) +
+  geom_text(aes(x=min(df_test$ds) , label="TRAIN     TEST", y=1600), colour="red", angle=0)
+
+
+
+```
+
+
+En primer lugar, se va a armar una regresión lineal con la tendencia y las variables estacionales. Luego, utilizará ARIMA para intentar captar cierto componente autoregresivo en la serie.
+
+### ARIMA
+
+
+```{r}
+#Defino serie temporal con las 18 horas laborales separando por dia
+ts_train <- ts(df_train[-1],freq=18)
+
+#Queda la serie univariada
+ts_train <- ts_train [,'y']
+```
+
+
+Se observa que la serie presenta coeficientes de autocorrelación se presentan por fuera de la banda azul, que indica que las mismas son significativamente diferentes de 0.
+
+### ¿Es la serie estacionaria?
+Se propone realizar el test de Ljung-Box para validar la información del gráfico. 
+
+
+```{r}
+Box.test(diff(ts_train),lag=10,type='Ljung-Box')
+
+```
+Se desprende que la serie no es estacionaria.
+
+## Estacionalidad y tendencia
+
+
+```{r}
+#Grafico considerando una estacionalidad horaria del tipo diaria (18 intervalos)
+ts_train %>% 
+  stl(s.window = 18) %>% 
+  autoplot(ts.colour='blue')
+
+#Dando el parámetro automatico se obtiene
+
+ts_train %>% 
+  mstl() %>% 
+  autoplot()
+```
+
+Para saber si se debe diferenciar la serie se puede utilizar un test "Unit Root". Se emplea a continuación el test KPSS(Kwiatkowski-Phillips-Schmidt-Shin), cuya hipótesis nula es que los datos son estacionarios. p-valores inferiores a 0,05 sugieren que se debe diferenciar la serie
+
+
+```{r}
+library(urca)
+ts_train %>% ur.kpss() %>%  summary()
+```
+Se rechaza hipótesis nula. Se procede a diferenciar la serie
+
+```{r}
+ts_train %>% diff() %>% ur.kpss() %>%  summary()
+```
+Con una diferenciación basta para hacer que la serie se comporte de forma estacionaria
+
+
+#### Implementación modelo ARIMA automático
+
+Se implementa la función auto.arima, que realiza los siguientes pasos para obtener el modelo ARIMA(p,d,q):
+
+1. Búsqueda del número de diferencias con test KPSS como se realizó anteriormente sobre la serie.
+2. Valores de "p" y "q" se obtienen minimizando el AIC luego de diferenciar la serie. No se prueban todos los modelos si no que se adoptan 4 modelos iniciales para realizar la búsqueda de los parámetros
+
+Sin embargo, este procedimiento no verifica tener ruido blanco en los residuos del modelo, por lo se procede a hacer un ARIMA manual
+
+
+```{r}
+library(forecast)
+
+auto_arima <- auto.arima(ts_train)
+summary(auto_arima)
+```
+
+Se observa que auto-arima no diferencia la serie a pesar de obtener eso vía el test.
+
+A continuación los valores predichos, que no entregan un resultado similar al comportamiento estacionario de la serie.
+
+```{r}
+valores_prediccion <- forecast(auto_arima,126)
+autoplot(valores_prediccion)
+```
+
+#### ARMA manual
+
+
+Para determinar los parámetros a utilizar, el parámetro "p" se obtiene del gráfico de PACF. Se prueba seteando el valor a 12, que se corresponde con las veces que significativamente el coeficiente toma valores por fuera del umbral para el primer ciclo
+
+```{r}
+ggPacf(ts_train)
+ggAcf(ts_train)
+```
+Se observa un comportamiento sinusoidal en ambos gráficos de coeficientes, por lo que p y q deben ser distintos de 0.
+
+```{r}
+#Modelo ARMA(p,0) con la cantidad de coeficientes que tienen picos
+(fit_p <- Arima(ts_train, order=c(10,1,0)))
+checkresiduals(fit_p)
+autoplot(forecast(fit_p))
+```
+
+
+```{r}
+#Modelo ARMA(0,q) con la cantidad de coeficientes que tienen picos
+(fit_q <- Arima(ts_train, order=c(0,1,10)))
+checkresiduals(fit_q)
+autoplot(forecast(fit_q))
+```
+Se observa que se debe combinar parámetros autoregresivos y de media móvil, y considerar la estacionalidad que presenta la serie.
+
+
+### ARIMA estacional
+
+```{r}
+#Estacionalidad diaria (18 horas)
+
+ts_train %>% diff(lag=19)%>% 
+  ggtsdisplay(xlab='Periodo',
+              main='Diferencias considerando estacionalidad diaria')
+```
+Del gráfico de la serie diferenciada, se observan que hay picos en el PACF donde el ACF no los tiene para los lags 19 (q=2)), mientras que en el ACF se observan picos por fuera aproximadamente 5 veces (AR(4))
+
+```{r}
+(fit_seasonal <- Arima(ts_train, order=c(5,0,0), seasonal=c(2,1,0),
+  lambda=0))
+checkresiduals(fit_seasonal)
+```
+
+
+Efectuamos predicción para semana restante
+```{r}
+ts_train %>%
+  Arima(order=c(5,0,0), seasonal=c(2,1,0), lambda=0) %>%
+  forecast(h=126) %>%
+  autoplot() +
+    ylab("Predicción de conteo de molinetes") + xlab("Período")
+```
+```{r}
+forecast_arima <- forecast(Arima(ts_train,order=c(5,0,0), seasonal=c(2,1,0), lambda=0),h=126)
+#Extraigo los valores medios de la serie
+valores_arima <- forecast_arima$mean
+
+```
+
+```{r}
+
+#Agrego el vector de predicciones a un nuevo df
+df_prediccion <-  df_test
+df_prediccion$arima_season <- NA_character_
+df_prediccion$arima_season[seq_along(valores_arima)] <- valores_arima
+df_prediccion$arima_season <- as.numeric(df_prediccion$arima_season)
+
+#Calculo el RMSE
+rmse(df_prediccion$y,df_prediccion$arima_season)
+
+```
+
