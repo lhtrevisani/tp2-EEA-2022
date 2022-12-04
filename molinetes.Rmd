@@ -1,8 +1,6 @@
 ---
 title: "R Notebook"
-output:
-  html_document:
-    df_print: paged
+output: html_notebook
 ---
 
 # Series de tiempo: comparativa entre un modelo ARIMA y prophet
@@ -39,7 +37,8 @@ df_deh <- read.csv("./datasets/202208_PAX15min-DEH.csv", sep=";")
 
 df <- bind_rows(df_abc, df_deh)
 rm(df_abc, df_deh)
-print(colnames(df))
+df %>%
+  select(-c(pax_pagos, pax_pases_pagos, pax_franq))
 
 ```
 
@@ -52,6 +51,8 @@ df_linea <- df %>%
   mutate(ts = dmy_hms(paste0(FECHA," " ,DESDE)))%>%
   ungroup() %>% 
   select(-c(FECHA, DESDE, HASTA))
+
+df_linea
 ```
 
 Agrupamos por linea y observamos la cantidad de pasajeros para cada una de ellas:
