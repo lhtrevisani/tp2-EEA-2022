@@ -76,7 +76,7 @@ df_linea %>%
 
 A continuación, analizamos la cantidad de pasajeros para cada estación de cada una de las lineas de subte:
 
-```{r, include = FALSE, warning=FALSE, message=FALSE}
+```{r, include = FALSE, warning=FALSE, message=FALSE, eval=FALSE}
 library(plotly)
 library(htmlwidgets)
 
@@ -399,6 +399,12 @@ lines(resultado$dia,                             # Draw second time series
       col = 3)
 ```
 
+### Algunas conclusiones y resúmen del trabajo:
+
+-   El modelo arima desarrollado logró una performance similar a la del modelo generado utilizando prophet. Logra una buena estimación de los pasajeros que recibe la estación Palermo en los distintos horarios y días de la semana, lo que nos podría ayudar, por ejemplo, a medir la cantidad de coches necesarios para trasladar a toda esa masa de gente.
+
+-   Sin embargo, el modelo arima no tiene tan resuelto el modelado de cada una de las componentes de la serie temporal, en este análisis se acompañó al arima con una regresión lineal que modela la tendencia y la estacionalidad diaria y horaria de la serie, además de los días feriados. Prophet sí lo logra mucho mejor. La aditividad de los componentes y la posibilidad de modelarlos como una función no lineal del tiempo les permite trabajar mejor con este tipo de series.
+
 ### Bibliografía
 
 -   Hyndman, R.J., & Athanasopoulos, G. (2021) Forecasting: principles and practice, 3rd edition, OTexts: Melbourne, Australia. OTexts.com/fpp3. 
@@ -406,3 +412,5 @@ lines(resultado$dia,                             # Draw second time series
 -   Shumway, R.H. and Stoffer, D.S. (2011) Time Series Analysis and Its Applications (With R examples), 3rd edition, Springer: New York, USA
 
 -   Diebold, F.X. (2008) Elements of forecasting, 4th edition. Mason, Ohio: South-Western/Cengage Learning.
+
+-   <https://github.com/lhtrevisani/EEA-2022/tree/main/clase%2011>
