@@ -140,6 +140,8 @@ df_train <- df_analisis %>%
 df_test <- df_analisis %>% 
   filter(ds > "2022-08-22")
 
+df_analisis
+
 ```
 
 Observo la serie:
