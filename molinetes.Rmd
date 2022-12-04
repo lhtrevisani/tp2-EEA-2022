@@ -1,6 +1,8 @@
 ---
 title: "R Notebook"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 # Series de tiempo: comparativa entre un modelo ARIMA y prophet
@@ -157,16 +159,6 @@ df_analisis %>%
 
 ### ARIMA
 
-```{r}
-df_train %>%
-  select(ds, y) %>% as_tsibble(index = ds) %>% as.ts() %>% mstl(s.window = c(7,  7*24)) %>%
-  autoplot() (s.window='periodic') %>% seasadj() -> eeadj
-
-
-```
-
-OTRO ENFOQUE:
-
 En primer lugar, se va a armar una regresión lineal con la tendencia y las variables estacionales. Luego, utilizará ARIMA para intentar captar cierto componente autoregresivo en la serie.
 
 ```{r}
@@ -253,6 +245,18 @@ modelos %>%
   gg_tsresiduals()
 ```
 
+Realizo el test de dickey-fuller sobre los residuos:
+
+```{r}
+residuos = as.data.frame(modelos %>%
+  select(arima200) %>% 
+  residuals())
+
+adf.test(residuos %>% filter(!is.na(.resid)) %>% select(.resid) %>% as.ts())
+```
+
+Se observa que los residuos son estacionarios.
+
 Realizo las predicciones sobre test:
 
 ```{r}
@@ -330,6 +334,8 @@ rmse(df_test$y, df_test$y_final)
 ```
 
 Considerando el error del modelo, se podría incluir alguna interacción entre el horario y el día (o si es fin de semana o no como regresora del modelo) lo que también podría ayduarnos a explicar la estructura que se observa en los residuos del arima.
+
+Se probó también con un SARIMA modelando la estacionalidad de la serie, pero al haber más de un componente estacional en la serie no logra descomponer correctamente el componente estacional del resto. Ese enfoque quedó en la branch: `arima-arma`
 
 ### Prophet
 
